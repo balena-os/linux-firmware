@@ -1,0 +1,14 @@
+name: linux-firmware
+type: sw.block
+version: 0.0.0
+description: >-
+  Linux Firmware package for balenaOS
+post-provisioning: >-
+  Linux Firmware package for balenaOS.
+
+  This block is for host OS system level use, not for user applications.
+assets:
+  repository:
+    type: blob.asset
+    data:
+      url: "https://github.com/balena-os/linux-firmware"

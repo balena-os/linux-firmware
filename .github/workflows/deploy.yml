@@ -1,0 +1,82 @@
+name: Deploy
+
+on:
+  # Tag events are used to finalize the releases.
+  push:
+    tags:
+      - "20[0-9][0-9][0-9][0-9][0-9][0-9]"
+  # Workflow dispatch events are used to manually trigger the workflow
+  # and select a tag to deploy.
+  workflow_dispatch:
+  # Allow testing this workflow on pull requests
+  # but do not finalize the releases.
+  pull_request:
+    branches:
+      - balena
+
+jobs:
+  deploy:
+    name: balena deploy
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        fleet:
+          - balena_os/linux-firmware-x86
+          - balena_os/linux-firmware-arm
+
+    steps:
+      # Checkout the pull request branch for pull_request events
+      # or the balena branch for push events.
+      # https://github.com/actions/checkout
+      - name: Checkout balena branch
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          ref: ${{ github.event.pull_request.head.sha || 'balena' }}
+
+      # Checkout the tag of the linux-firmware repository
+      # in order to deploy the firmware on tag events.
+      # https://github.com/actions/checkout
+      - if: startsWith(github.ref, 'refs/tags/') == true
+        name: Checkout linux-firmware @ tag
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          path: linux-firmware
+
+      # Checkout the main branch of the linux-firmware repository
+      # in order to test the balena deploy workflow on pull_request events.
+      # https://github.com/actions/checkout
+      - if: startsWith(github.ref, 'refs/tags/') == false
+        name: Checkout linux-firmware @ main
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          ref: main
+          path: linux-firmware
+
+      # Update the version in balena.yml by converting date tag (YYYYMMDD) to semver (yyyy.mm.dd)
+      - if: startsWith(github.ref, 'refs/tags/') == true
+        name: Update version in balena.yml
+        env:
+          DATE: ${{ github.ref_name }}
+        run: |
+          major="${DATE:0:4}"
+          minor=$((10#${DATE:4:2}))  # Converts string with leading zero to number, stripping zero
+          patch=$((10#${DATE:6:2}))  # Converts string with leading zero to number, stripping zero
+          semver="${major}.${minor}.${patch}" yq '.version = strenv(semver)' -i balena.yml
+          echo "Using version: ${semver}"
+          yq . balena.yml
+
+      # Deploy the firmware to balena.
+      # https://github.com/balena-io/deploy-to-balena-action
+      - name: Deploy to balena
+        uses: balena-io/deploy-to-balena-action@63a685c4b9c898c38e66776284a78c4e50ec8c97 # v2.0.136
+        with:
+          balena_token: ${{ secrets.BALENA_API_KEY }}
+          fleet: ${{ matrix.fleet }}
+          environment: balena-cloud.com

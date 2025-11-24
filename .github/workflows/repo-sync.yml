@@ -1,5 +1,4 @@
 name: "Repo Sync"
-description: "Force-sync the local branch(es) with the upstream repository"
 
 on:
   schedule:

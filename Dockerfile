@@ -7,7 +7,8 @@ RUN apk add --no-cache make findutils rdfind zstd coreutils
 
 COPY ./linux-firmware /src
 
-RUN make -C /src DESTDIR=/out install-zst && make dedup
+# dedup target was only added recently
+RUN make -C /src DESTDIR=/out install-zst && ( make dedup || true )
 
 FROM scratch
 

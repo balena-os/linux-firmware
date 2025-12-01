@@ -1,23 +1,59 @@
 name: Deploy
 
 on:
-  # Tag events are used to finalize the releases.
-  push:
-    tags:
-      - "20[0-9][0-9][0-9][0-9][0-9][0-9]"
-  # Workflow dispatch events are used to manually trigger the workflow
-  # and select a tag to deploy.
+  # Workflow dispatch events are used to manually trigger the workflow.
   workflow_dispatch:
-  # Allow testing this workflow on pull requests
-  # but do not finalize the releases.
+    inputs:
+      firmware-tag:
+        description: >
+          "Existing linux-firmware tag to deploy in the format YYYYMMDD"
+        required: false
+        type: string
+      allow-revisions:
+        description: >
+          "Allow revisions to be created if a release exists for this ref"
+        required: false
+        type: boolean
+        default: true
+      finalize:
+        description: >
+          "Finalize the release during deployment"
+        required: false
+        type: boolean
+        default: false
+  # Allow testing this workflow on pull requests but do not finalize releases.
   pull_request:
     branches:
       - balena
+  # Run this workflow when the repo sync workflow is completed
+  # to process any new upstream tags.
+  # New tags without an associated balena release will be built and finalized.
+  workflow_run:
+    workflows: [Repo Sync]
+    types:
+      - completed
+
+concurrency:
+  group:
+    ${{ github.workflow }}-${{ github.event_name }}-${{ inputs.firmware-tag ||
+    github.ref }}
+  # Expressions in the concurrency context do not have access
+  # to the entire github.event context so we cannot make advanced
+  # expressions beyond a few top level github event properties.
+
+  # See: https://github.com/orgs/community/discussions/69704#discussioncomment-7803351
+
+  # Cancel jobs in-progress for open PRs, but not merged or closed PRs, by checking for the merge ref.
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 
 jobs:
   deploy:
     name: balena deploy
     runs-on: ubuntu-24.04
+    if: |
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+
     strategy:
       fail-fast: false
       matrix:
@@ -26,57 +62,168 @@ jobs:
           - balena_os/linux-firmware-arm
 
     steps:
-      # Checkout the pull request branch for pull_request events
-      # or the balena branch for push events.
       # https://github.com/actions/checkout
       - name: Checkout balena branch
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           persist-credentials: false
           fetch-depth: 1
-          ref: ${{ github.event.pull_request.head.sha || 'balena' }}
 
-      # Checkout the tag of the linux-firmware repository
-      # in order to deploy the firmware on tag events.
+      # Install npm dependencies
+      - name: Install dependencies
+        run: |
+          npm install balena-sdk@^22.4.3 semver@^7.7.3
+
+      # https://github.com/actions/github-script
+      - if: inputs.firmware-tag == ''
+        name: List firmware tags
+        id: list-tags
+        uses: actions/github-script@v8.0.0
+        with:
+          result-encoding: json
+          script: |
+            // Get all tags sorted by version in descending order
+            const { data: tags } = await github.rest.repos.listTags({
+              ...context.repo,
+              per_page: 10, // only fetch the last handful of tags
+              page: 1
+            });
+
+            console.log({ tags });
+            core.setOutput('latest', tags[0].name)
+            return tags;
+
+      # Checkout the main branch of linux-firmware at the provided tag.
+      # This also serves as validation that the provided tag exists.
       # https://github.com/actions/checkout
-      - if: startsWith(github.ref, 'refs/tags/') == true
-        name: Checkout linux-firmware @ tag
+      - name: Checkout linux-firmware
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        id: checkout-linux-firmware
         with:
           persist-credentials: false
           fetch-depth: 1
+          ref: ${{ inputs.firmware-tag || steps.list-tags.outputs.latest }}
           path: linux-firmware
 
-      # Checkout the main branch of the linux-firmware repository
-      # in order to test the balena deploy workflow on pull_request events.
-      # https://github.com/actions/checkout
-      - if: startsWith(github.ref, 'refs/tags/') == false
-        name: Checkout linux-firmware @ main
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      # https://github.com/actions/github-script
+      - name: Convert firmware tag to semver
+        id: tag-coerce
+        uses: actions/github-script@v8.0.0
+        env:
+          FIRMWARE_REF: ${{ steps.checkout-linux-firmware.outputs.ref }}
         with:
-          persist-credentials: false
-          fetch-depth: 1
-          ref: main
-          path: linux-firmware
+          result-encoding: string
+          script: |
+            const semverCoerce = require('semver/functions/coerce');
+
+            // Check regex to ensure tag is in the format YYYYMMDD
+            const ref = process.env.FIRMWARE_REF;
+            const regex = /^[0-9]{8}$/;
+            if (!regex.test(ref)) {
+              throw new Error('Firmware tag must be in the format YYYYMMDD');
+            }
+
+            // Convert date tag (YYYYMMDD) to semver by adding separator and passing to coerce
+            const semver = semverCoerce(`${ref.slice(0, 4)}.${ref.slice(4, 6)}.${ref.slice(6, 8)}`, { loose: true });
+
+            console.log({ semver });
+
+            if (!semver.version) {
+              throw new Error('Failed to coerce firmware tag to semver');
+            }
+
+            core.setOutput('semver', semver.version);
+
+            return semver;
 
       # Update the version in balena.yml by converting date tag (YYYYMMDD) to semver (yyyy.mm.dd)
-      - if: startsWith(github.ref, 'refs/tags/') == true
-        name: Update version in balena.yml
+      - name: Update version in balena.yml
         env:
-          DATE: ${{ github.ref_name }}
+          SEMVER: ${{ steps.tag-coerce.outputs.semver }}
         run: |
-          major="${DATE:0:4}"
-          minor=$((10#${DATE:4:2}))  # Converts string with leading zero to number, stripping zero
-          patch=$((10#${DATE:6:2}))  # Converts string with leading zero to number, stripping zero
-          semver="${major}.${minor}.${patch}" yq '.version = strenv(semver)' -i balena.yml
-          echo "Using version: ${semver}"
+          yq '.version = strenv(SEMVER)' -i balena.yml
           yq . balena.yml
 
-      # Deploy the firmware to balena.
-      # https://github.com/balena-io/deploy-to-balena-action
-      - name: Deploy to balena
-        uses: balena-io/deploy-to-balena-action@a18a601d3dca56e1a2d1b6e9d9786e83b8ff1c39 # v2.0.138
+      # Check for existing release versions for the block matching the firmware ref
+      # https://github.com/actions/github-script
+      - if: inputs.allow-revisions != true
+        name: Check for existing balena releases
+        id: match-releases
+        uses: actions/github-script@v8.0.0
+        env:
+          FIRMWARE_REF: ${{ steps.checkout-linux-firmware.outputs.ref }}
+          BALENA_API_KEY: ${{ secrets.BALENA_API_KEY }}
+          APP_SLUG: ${{ matrix.fleet }}
         with:
-          balena_token: ${{ secrets.BALENA_API_KEY }}
-          fleet: ${{ matrix.fleet }}
-          environment: balena-cloud.com
+          result-encoding: json
+          script: |
+            const { getSdk } = require('balena-sdk');
+
+            const balena = getSdk({
+                apiUrl: "https://api.balena-cloud.com/",
+            });
+
+            await balena.auth.loginWithToken(process.env.BALENA_API_KEY);
+
+            const releases = await balena.models.release.getAllByApplication(`${process.env.APP_SLUG}`, {
+              $top: 10,
+              $select: ['id', 'raw_version', 'is_final'],
+              $filter: { is_final: true, status: 'success', release_tag: {
+                $any: {
+                  $alias: 'rt',
+                  $expr: {
+                    rt: {
+                      tag_key: 'linux-firmware-ref',
+                      value: process.env.FIRMWARE_REF,
+                    },
+                  },
+                },
+              }},
+              $orderby: { created_at: 'desc' },
+            });
+            console.log({ releases });
+
+            if (releases.length > 0) {
+              core.setOutput('release_id', releases[0].id);
+            }
+
+            return releases;
+
+      # https://github.com/balena-io-examples/setup-balena-action
+      - if: |
+          steps.match-releases.outputs.release_id == '' ||
+          github.event_name == 'pull_request'
+        name: Setup balena CLI
+        uses: balena-io-examples/setup-balena-action@b2bd9b45bd5e36246e1ee17ee2a8920c7bc61201 # v0.0.60
+        env:
+          # renovate: datasource=github-releases depName=balena-io/balena-cli
+          BALENA_CLI_VERSION: v23.2.0
+        with:
+          cli-version: ${{ env.BALENA_CLI_VERSION }}
+          balena-token: ${{ secrets.BALENA_API_KEY }}
+
+      # Use balena CLI to push the release and optionally finalize it.
+      # We can't use the balena-io/deploy-to-balena action because it doesn't support
+      # workflow_run and workflow_dispatch events.
+      - if: |
+          steps.match-releases.outputs.release_id == '' ||
+          github.event_name == 'pull_request'
+        name: Deploy to balena
+        id: deploy-to-balena
+        env:
+          FINALIZE:
+            ${{ inputs.finalize || github.event_name == 'workflow_run' }}
+          FIRMWARE_REF: ${{ steps.checkout-linux-firmware.outputs.ref }}
+          FIRMWARE_SHA: ${{ steps.checkout-linux-firmware.outputs.commit }}
+        run: |
+          set -x
+
+          draft=""
+          if [[ "${FINALIZE}" != "true" ]]; then
+            draft="--draft"
+          fi
+
+          balena push ${{ matrix.fleet }} ${draft} \
+            --release-tag "balena-ci-commit-sha" "${{ github.sha }}" \
+            --release-tag "linux-firmware-ref" "${FIRMWARE_REF}" \
+            --release-tag "linux-firmware-sha" "${FIRMWARE_SHA}"

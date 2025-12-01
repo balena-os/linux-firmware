@@ -1,0 +1,7 @@
+version: '2'
+
+services:
+  extra-linux-firmware:
+    build: .
+    labels:
+      io.balena.features.extra-firmware: '1'

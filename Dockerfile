@@ -21,4 +21,4 @@ COPY --from=builder /out/lib/firmware /lib/firmware
 # the extra firmware volume will be mounted to /extra-firmware and needs
 # to be populated with the current firmware files from the container runtime.
 # If the label is not truthy, this mount point will not exist.
-CMD [ "rsync", "-av", "--delete", "/lib/firmware/", "/extra-firmware/" ]
+CMD [ "/bin/sh", "-c", "rsync -av --delete /lib/firmware/ /extra-firmware/ && sleep infinity" ]

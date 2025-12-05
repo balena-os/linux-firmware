@@ -22,8 +22,32 @@ This repository includes automated workflows for maintenance and deployment:
   branch and tags from the upstream repository.
 - **Deploy**: Triggered by new tags or manually (`deploy.yml`). It builds and
   deploys the firmware to the `balena_os/linux-firmware-x86` and
-  `balena_os/linux-firmware-arm` fleets. It also updates the version in
-  `balena.yml` based on the tag date.
+  `balena_os/linux-firmware-arm` fleets.
+
+### Release Lifecycle
+
+| Trigger | Release Created | Finalized |
+|---------|-----------------|-----------|
+| **Pull Request** to `balena` branch | ✅ Yes | ❌ No (draft) |
+| **Manual dispatch** (default) | ✅ Yes | ❌ No (draft) |
+| **Manual dispatch** with `finalize: true` | ✅ Yes | ✅ Yes |
+| **Repo Sync** completes (new upstream tags) | ✅ Yes | ✅ Yes |
+
+#### Revisions
+
+When manually triggering the deploy workflow, the `allow-revisions` input
+(default: `true`) controls behavior when a finalized release already exists for
+the specified firmware tag:
+
+- **`allow-revisions: true`** — A new release (revision) is pushed regardless of
+  existing releases.
+- **`allow-revisions: false`** — No new release is created if a matching
+  finalized release already exists.
+
+> [!IMPORTANT]
+> Merging changes to the `balena` branch does **not** automatically create a new
+> release. Releases are only created when triggered by the deploy workflow—either
+> manually or after the repo sync workflow detects new upstream tags.
 
 ## Usage
 

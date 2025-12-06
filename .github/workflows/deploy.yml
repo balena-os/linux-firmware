@@ -78,7 +78,7 @@ jobs:
       - if: inputs.firmware-tag == ''
         name: List firmware tags
         id: list-tags
-        uses: actions/github-script@v8.0.0
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           result-encoding: json
           script: |
@@ -108,7 +108,7 @@ jobs:
       # https://github.com/actions/github-script
       - name: Convert firmware tag to semver
         id: tag-coerce
-        uses: actions/github-script@v8.0.0
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           FIRMWARE_REF: ${{ steps.checkout-linux-firmware.outputs.ref }}
         with:
@@ -149,7 +149,7 @@ jobs:
       - if: inputs.allow-revisions != true
         name: Check for existing balena releases
         id: match-releases
-        uses: actions/github-script@v8.0.0
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           FIRMWARE_REF: ${{ steps.checkout-linux-firmware.outputs.ref }}
           BALENA_API_KEY: ${{ secrets.BALENA_API_KEY }}

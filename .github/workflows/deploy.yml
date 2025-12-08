@@ -58,8 +58,10 @@ jobs:
       fail-fast: false
       matrix:
         fleet:
-          - balena_os/linux-firmware-x86
-          - balena_os/linux-firmware-arm
+          - balena_os/linux-firmware-amd64
+          - balena_os/linux-firmware-aarch64
+          - balena_os/linux-firmware-armv7hf
+          - balena_os/linux-firmware-armv6hf
 
     steps:
       # https://github.com/actions/checkout

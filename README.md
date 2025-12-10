@@ -51,4 +51,28 @@ the specified firmware tag:
 
 ## Usage
 
-This block is primarily used by balenaOS build systems.
+Use this block to easily add proprietary or custom firmware to the OS without
+needing a privileged container.
+
+Include this snippet in your `docker-compose.yml` file under `services`:
+
+```yaml
+extra-linux-firmware:
+  image: bh.cr/balena_os/linux-firmware-<arch> # where <arch> is one of aarch64, armv7hf, armv6hf or amd64
+  labels:
+    io.balena.features.extra-firmware: '1'
+```
+
+To pin to a specific firmware tag use:
+
+```yaml
+extra-linux-firmware:
+  image: bh.cr/balena_os/linux-firmware-<arch>/<version>
+  labels:
+    io.balena.features.extra-firmware: '1'
+```
+
+> [!NOTE]
+> To use a specific firmware tag, refer to the available tags at <https://github.com/balena-os/linux-firmware/tags>.
+> Firmware tags in `YYYYMMDD` format are converted to a semver-compatible format (`yyyy.m.d`) for image tags.
+> For example, to use the firmware tag `20240909`, specify the image as `bh.cr/balena_os/linux-firmware-amd64/2024.9.9`.

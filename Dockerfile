@@ -7,8 +7,14 @@ RUN apk add --no-cache make findutils rdfind zstd coreutils
 
 COPY ./linux-firmware /src
 
-# dedup target was only added recently
-RUN make -C /src DESTDIR=/out install-zst && ( make dedup || true )
+# dedup target was only added recently.
+#
+# Use the `install-xz` or `install-zst` targets to compress firmware
+# if your device type has compressed firmware support enabled
+# in the kernel. By default, balenaOS uses xz for firmware compression
+# but we install uncompressed firmware in this example because
+# some drivers may not be able to load it otherwise.
+RUN make -C /src DESTDIR=/out install && ( make dedup || true )
 
 FROM alpine:3.22
 

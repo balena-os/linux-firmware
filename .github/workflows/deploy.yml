@@ -196,7 +196,7 @@ jobs:
           steps.match-releases.outputs.release_id == '' ||
           github.event_name == 'pull_request'
         name: Setup balena CLI
-        uses: balena-io-examples/setup-balena-action@01d2ba265627ae7f3597681345498a3adde7302a # v0.0.100
+        uses: balena-io-examples/setup-balena-action@651057393f4a38a59e2cade401b4b8c7a925adae # v0.0.117
         env:
           # renovate: datasource=github-releases depName=balena-io/balena-cli
           BALENA_CLI_VERSION: v23.2.0

@@ -9,7 +9,7 @@ on:
 jobs:
   flowzone:
     name: Flowzone
-    uses: product-os/flowzone/.github/workflows/flowzone.yml@24ee0337c8c85427d38ff66931a75d85bd5db846 # master
+    uses: product-os/flowzone/.github/workflows/flowzone.yml@b1f311b894bd358de3f00b4d1f5d830392077443 # master
     secrets: inherit
     with:
       # Disable versioning as we don't want to version the firmware or our packaging workflows.
